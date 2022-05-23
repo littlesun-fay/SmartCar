@@ -1,0 +1,206 @@
+前言
+智能小车作为现代的新发明，是以后的发展方向，它可以在一定范围内根据人的操控在一个环境里进行相应的运作，可应用于科学勘探和其他比较危险操作等的用途。随着汽车工业的迅速发展，关于汽车的研究也就越来越受人关注。全国电子大赛等各种电子大赛几乎每次都有智能小车这方面的题目，全国各高校也都很重视该题目的研究。所以，所以我们受此启发也进行了相关学习并设计了一款可以实现基本操作的智能控制小车，实现手机端对小车的人为控制。
+1 总体方案设计
+若要实现控制，首先便是要实现与小车之间的通讯，除了一般利用的蓝牙等通讯手段，还可以采用无线局域网的方式，来实现小车与手机之间的通讯。NodeMCU是物联网领域，常见的、性价比高的一款MCU，可以利用这款MCU来制作智能小车。
+基本原理与方法：将手机与微机连接到同一WIFI中，实现socket通信，然后利用NodeMCU充当服务端，手机充当客户端；手机访问提前绑定的IP地址后，服务端将控制页面发送到手机浏览器中，然后利用手机浏览器发送指令；NodeMCU经过解析识别出客户端发来的控制指令，对应相应的小车控制函数，通过GPIO口电平的变化实现对L298N的控制；最后L298N又以一定的逻辑关系控制电机的转动情况。信号流图框架如图1所示。
+                                      图1 信号流图
+2 硬件及制动部分
+2.1 硬件模块
+（1）NodeMCU模块
+NodeMCU,如图2所示，是一个开源的物联网平台。 它使用Lua脚本语言编程。该平台基于eLua开源项目,底层使用ESP8266 sdk 0.9.5版本。该平台使用了很多开源项目, 例如lua-cjson,spiffs。NodeMCU包含了可以运行在esp8266 Wi-Fi SoC芯片之上的固件,以及基于ESP-12模组的硬件。
+图2 NodeMCU
+（2）L298N
+L298N是专用驱动集成电路，属于H桥集成电路，其输出电流为2A，最高电流4A，最高工作电压50V，可以驱动感性负载，如大功率直流电机，步进电机，电磁阀等，特别是其输入端可以与单片机直接相联，从而很方便地受单片机控制。当驱动直流电机时，可以直接控制步进电机，并可以实现电机正转与反转，实现此功能只需改变输入端的逻辑电平。
+　　L298N芯片可以驱动两个二相电机，也可以驱动一个四相电机，输出电压最高可达50V，可以直接通过电源来调节输出电压；可以直接用单片机的IO口提供信号；而且电路简单，使用比较方便。L298N可接受标准TTL逻辑电平信号VSS，VSS可接4．5～7V电压。4脚VS接电源电压，VS电压范围VIH为＋2．5～46V。输出电流可达2A，可驱动电感性负载。1脚和15脚下管的发射极分别单独引出以便接入电流采样电阻，形成电流传感信号。L298可驱动2个电动机，OUT1，OUT2和OUT3，OUT4之间可分别接电动机，本装置我们选用驱动两台电动机控制电机的正反转。EnA，EnB接控制使能端，控制电机的停转。图3是L298N内部原理图。
+图3 L298N内部原理图
+2.2 制动部分
+如图4所示，我们利用L298N模块对两个电机进行控制，左轮前转实现右转，右轮前转实现左转，两轮前转直行，后转后退。
+                           图4 小车及连线
+3 软件及网页部分
+3.1 软件
+Socket就是一个网络编程的接口（API），它定义了一种标准，并对TCP/IP进行封装，实现了网络传输数据的能力。在socket通信中也是这样，分为TCP、UDP两种。TCP（Transmission Control Protocol，传输控制协议）是基于连接的协议，也就是说，在正式收发数据前，必须和对方建立可靠的连接。UDP（User Data Protocol，用户数据报协议）是与TCP相对应的协议。它是面向非连接的协议，它不与对方建立连接，而是直接就把数据包发送过去。
+首先，客户端和服务端会分别新建一个socket，服务端的socket需要通过bind()来绑定上端口，启动listen()进行实时监听，并等待客户端的接入，即accept()。而客户端则需要通过服务器IP和端口两个参数来建立connect()连接，此时，服务器会得到有新客户端连接的信息，启动read()等待客户端数据的传人，客户端如果成功接收到服务端的连接成功后，继续执行write()来向服务端发生数据，同理，服务端也使用这样的模式回馈客户端的数据，知道客户端关闭，服务端会收到客户端退出连接的消息，服务器重新进入等待状态，等待新客户端的进入。我们采用TCP协议采用python编程语言，代码如下：
+
+import socket       #导入socket通信库
+import machine
+from machine import Pin
+import network
+
+
+g4 = Pin(4,Pin.OUT)
+g5 = Pin(5,Pin.OUT)
+g12 = Pin(12,Pin.OUT)
+g13 = Pin(13,Pin.OUT)
+
+ """小车控制部分"""
+def Go():            #控制前进函数
+    g4.value(1)
+    g5.value(0)
+    g12.value(1)
+    g13.value(0)
+
+def Back():       #后退函数
+    g4.value(0)
+    g5.value(1)
+    g12.value(0)
+    g13.value(1)
+
+
+def Left():   #左转函数
+    g4.value(1)
+    g5.value(0)
+    g12.value(0)
+    g13.value(0)
+
+def Right():    #右转函数
+    g4.value(0)
+    g5.value(0)
+    g12.value(1)
+    g13.value(0)
+
+def Stop():     #停车函数
+    g4.value(0)
+    g5.value(0)
+    g12.value(0)
+    g13.value(0)
+
+"""网络连接部分"""
+sta_if = network.WLAN(network.STA_IF)
+p2 = Pin(2, Pin.OUT)
+sta_if.active(False)
+if not sta_if.isconnected():
+        p2.value(0)
+        print('connecting to network...')     #开始连接
+        sta_if.active(True)
+        sta_if.connect('小太阳', '15527290613')  #连接到手机WiFi
+        while not sta_if.isconnected(): 
+                pass
+if sta_if.isconnected():
+        print('connect success')  #如连接成功提示
+        p2.value(1)
+        print('network config:', sta_if.ifconfig())   #打印IP地址数组
+
+"""socket通信部分"""
+addr = sta_if.ifconfig()[0]  #使用网络连接的IP数组中第一个IP
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   
+s.bind((sta_if.ifconfig()[0], 80)) #绑定IP地址，端口号为80
+s.listen(5)        #设置允许连接的客户端数量
+print('listening on:', addr)
+while True:
+    cl, addr = s.accept()    #接受客户端的连接请求，cl为此链接创建的一个新的scoket对象，addr客户端地址
+    print('client connected from:', addr)
+    cl_file = cl.makefile('rwb', 0)    #返回与socket对象关联的文件对象。rwb:支持二进制模式的读写操作 0:默认值，不支持缓存
+    req = b''
+    while True: 
+        line = cl_file.readline()     #读取发送过来的数据，直到\r\n换行结束
+        if not line or line == b'\r\n':
+            break
+        req += line
+    print("Request:")
+    req=req.decode('utf-8').split('\r\n')      #解码
+    req_data=req[0].lstrip().rstrip().replace(' ','').lower()
+    print(req_data)
+    if req_data.find('favicon.ico')>-1:
+        cl.close()
+        continue
+    else:
+        req_data=req_data.replace('get/?','').replace('http/1.1','')
+        index = req_data.find('key=')    #查找key标签
+        value = req_data[index+4:index+6].lstrip().rstrip()
+        print('key:',value)
+        if value == 'go':
+            Go()
+        elif value == 'ba':
+            Back()
+        elif value == 'le':
+            Left()
+        elif value == 'ri':
+            Right()
+        else:
+            Stop()
+    with open("control.html", 'r') as f:
+        for line in f:
+            cl.send(line)
+                           #返回html网页的数据
+    cl.close()     #关闭socket
+3.2 网页
+
+界面图如图5所示。
+图5 操作界面
+	<!DOCTYPE html> 
+	<html lang="en"> 
+	<head> 
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=2.0, user-scalable=yes" /> 
+	<title>WHUTer Smart Car</title> 
+	<style type="text/css"> 
+	*{ 
+	padding:0; 
+	margin:0; 
+	} 
+	a{ 
+	display: block;width: 100%;height: 100%;line-height: 100px;font-size: 14px;text-align: center;text-decoration:none;color:#000000; 
+	} 
+	.content{ 
+	width: 200px;height: 200px;position: relative;margin:50px auto;left: 0;top:50%;bottom: 0;right:0; 
+	box-shadow: 0px 0px 550px rgba(255, 255, 255, 0.3) inset,0px 0px 5px #FFFFFF; 
+	} 
+	.quartercircle{ 
+	position:absolute;width: 100px;height: 100px;-webkit-border-radius: 100px 0 0 0; 
+	} 
+	.divLeft{ 
+	top: 25%;left: -10%; transform:rotate(-45deg);background-color: bisque ; 
+	} 
+	.divTop{ 
+	top: -10%;left: 25%; transform:rotate(45deg);background-color: burlywood ; 
+	} 
+	.divRight{ 
+	top: 25%;left: 60%;transform:rotate(135deg);background-color: darkgray ; 
+	} 
+	.divBottom{ 
+	top: 60%;left: 25%;transform:rotate(-135deg);background-color: darkkhaki ; 
+	} 
+	.circle{ 
+	width:50%;height:50%;position: absolute;z-index: 100;top:0%;left:0%;bottom:0;right: 0;margin:auto;border-radius: 100%;background-color: #889900;text-align: center; 
+	} 
+	.circle span{ 
+	display: block;width: 100%;height: 100%;line-height: 200px;font-size: 24px; 
+	} 
+	.quartercircle a{ 
+	position: absolute;width: 100%;height: 100%; 
+	background: #888888; 
+	} 
+	.quartercircle a:hover{ 
+	background: #8BFF7C; 
+	} 
+	
+	</style> 
+	
+	<body> 
+	
+	<center><br /><br /><h3>WHUTer Smart Car</h3><br /></center> 
+	<div class="content" style=""> 
+	<form action="/" method="get" accept-charset="utf-8"> 
+	<div class="quartercircle divLeft" style=""> 
+	<a href="?key=LEFT" style="background: no-repeat center;transform:rotate(45deg);">LEFT</a> 
+	</div> 
+	<div class="quartercircle divTop" style=""> 
+	<a href="?key=GO" style="background: no-repeat center;transform:rotate(-45deg);">GO</a> 
+	</div> 
+	<div class="quartercircle divRight" style=""> 
+	<a href="?key=RIGHT" style="background: no-repeat center;transform:rotate(-135deg);">RIGHT</a> 
+	</div> 
+	<div class="quartercircle divBottom" style=""> 
+	<a href="?key=BACK" style="display:block;position:absolute;z-index:50;background: no-repeat center;transform:rotate(135deg);">BACK</a> 
+	</div> 
+	<div class="circle" style="background-color: red;"><a href="?key=STOP">STOP</a></div> 
+
+	</form> 
+	</div> 
+	
+	</body> 
+	</html>
+
+4 总结
+本学期事情比较杂，我们两个人互相合作完成了这个作品和相关文档。在这个过程中，我们学习了许多在以前学习生活中没有遇到过的新知识和新方法，以及一些新的模块。经过实践，我们会发现其实很多东西不像想象得那复杂，是可以做出来的。另一方面，智能小车其实可以实现的功能绝不限于此，它应该可以完成采集信息、发送信息从而使我们可以了解外界或远处的情况的，尤其是对不适合人类直接前往的比较危险的地方进行探测具有重要意义。
+
